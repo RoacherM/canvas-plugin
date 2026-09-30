@@ -39,5 +39,5 @@ export function apply(ctx) {
   registerContextInjection(ctx, context);
 
   registerRoutes(ctx, { store, generator, library, focus, credentials, context });
-  registerTools(ctx, { store, generator, focus, attachments });
+  registerTools(ctx, { store, generator, focus, attachments, library });
 }

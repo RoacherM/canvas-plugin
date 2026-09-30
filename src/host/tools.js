@@ -3,8 +3,8 @@
  * so every change appears on the open canvas within a second or two.
  */
 import { readFile, stat } from 'node:fs/promises';
-import { basename, extname, isAbsolute, resolve } from 'node:path';
-import { absolutePosition, addEdge, addNodes, canGenerate, fitSize, freeSpot, gridLayout, modeOf, newId, removeNodes, summarize, updateNode } from '../shared/doc.js';
+import { basename, dirname, extname, isAbsolute, resolve } from 'node:path';
+import { ASSET_CATEGORIES, absolutePosition, addEdge, addNodes, canGenerate, categoryOf, fitSize, freeSpot, gridLayout, modeOf, newId, removeNodes, setAssetCategory, summarize, updateNode } from '../shared/doc.js';
 import { DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, IMAGE_MODELS, IMAGE_SIZES, VIDEO_MODELS, VIDEO_RATIOS } from './ark.js';
 import { imageSize } from './media.js';
 import { CANVAS_EXT, CanvasError, assetPath, assetRef, defaultCanvasPath, kindOfPath } from './store.js';
@@ -50,7 +50,19 @@ function connectInputs(doc, id, op, exists) {
   return next;
 }
 
-export function registerTools(ctx, { store, generator, focus, attachments }) {
+/**
+ * The production category an op files an image/video node under: a known category, `null` to clear
+ * it ('' or 'none'), or `undefined` when the op doesn't mention one. Unknown names are refused.
+ */
+export function opCategory(value, where = '') {
+  if (value === undefined) return undefined;
+  if (value === null || value === '' || value === 'none') return null;
+  const category = categoryOf(value);
+  if (category === undefined) throw new CanvasError(`${where}未知的资产分类：${value}（可选：${ASSET_CATEGORIES.join('、')}）`);
+  return category;
+}
+
+export function registerTools(ctx, { store, generator, focus, attachments, library }) {
   function cwdOf(exec) {
     const cwd = exec.agent?.session?.header?.cwd;
     if (typeof cwd !== 'string') throw new CanvasError('这个工具需要在有工作区的会话里使用');
@@ -114,7 +126,7 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
 
   ctx.effect(() => ctx.tools.register({
     name: 'canvas_read',
-    description: 'Read the canvas (the infinite board in the right sidebar): every node with id, type (image/video/text/generator/frame/script), position, size, asset path, prompt (gen_prompt: the prompt an image/video node generates itself from), version (shown/total results of a node), generation status, storyboard rows of script nodes, the edges between them, and which nodes the user has selected. Returns the selected images (or the ids you ask for) as images you can see. Call this before editing, and to check on running video generations.',
+    description: 'Read the canvas (the infinite board in the right sidebar): every node with id, type (image/video/text/generator/frame/script), position, size, asset path, production asset category (character/scene/prop/style/audio), prompt (gen_prompt: the prompt an image/video node generates itself from), version (shown/total results of a node), generation status, storyboard rows of script nodes, the edges between them, and which nodes the user has selected. Returns the selected images (or the ids you ask for) as images you can see. Call this before editing, and to check on running video generations.',
     parameters: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -158,6 +170,7 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
       x: num('X (canvas units; for children of a frame, relative to the frame).'), y: num('Y.'), w: num('Width.'), h: num('Height.'),
       parent: str('Frame node id to place the new node inside.'),
       color: str('Note or frame color, e.g. #ffd666.'),
+      category: str(`Production asset category of an image/video node (add_image/add_video/update): ${ASSET_CATEGORIES.join(', ')}; "none" clears it. A node bound to a library asset re-files that asset (and every node showing it).`),
     },
     required: ['op'],
   };
@@ -177,6 +190,7 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
       if (!Array.isArray(args.ops) || args.ops.length === 0) throw new CanvasError('ops 不能为空');
       const created = [];
       const toRun = [];
+      const refiled = new Map();   // library asset id → category, applied once the edit is on disk
       const ref = (value) => (typeof value === 'string' && /^\$\d+$/.test(value) ? created[Number(value.slice(1))] ?? value : value);
       const { doc } = await store.mutate(canvasPath, async (start) => {
         let doc = start;
@@ -184,6 +198,7 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
           const need = (value, name) => { if (value === undefined || value === '') throw new CanvasError(`第 ${index} 个操作（${op.op}）缺少 ${name}`); return value; };
           const place = () => ({ x: op.x ?? freeSpot(doc).x, y: op.y ?? freeSpot(doc).y });
           const exists = (id) => { const node = doc.nodes.find((candidate) => candidate.id === id); if (!node) throw new CanvasError(`找不到节点 ${id}`, 404); return node; };
+          const category = opCategory(op.category, `第 ${index} 个操作（${op.op}）：`);
           let id;
           switch (op.op) {
             case 'add_image': case 'add_video': {
@@ -197,6 +212,7 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
                 doc = addNodes(doc, [{ id, type: video ? 'video' : 'image', ...place(), w: op.w ?? (video ? 400 : 320), h: op.h ?? (video ? 225 : 320),
                   ...(op.parent ? { parentId: ref(op.parent) } : {}), data: { label: op.label, gen: defaultGen(video ? 'video' : 'image', op.prompt) } }]);
               }
+              if (category) doc = updateNode(doc, id, { data: { category } });
               doc = connectInputs(doc, id, op, (value) => exists(ref(value)));
               break;
             }
@@ -249,7 +265,16 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
               if (op.rows !== undefined && node.type === 'script') data.rows = scriptRows(op.rows);
               if (op.color !== undefined) data.color = op.color;
               if (op.parent !== undefined) patch.parentId = ref(op.parent) || undefined;
+              if (category !== undefined) {
+                if (node.type !== 'image' && node.type !== 'video') throw new CanvasError(`只有图片/视频节点能归入资产分类（${node.id} 是 ${node.type}）`);
+                data.category = category ?? undefined;
+              }
               doc = updateNode(doc, node.id, { ...patch, data });
+              // Keep every node bound to the same library asset in the same category.
+              if (category !== undefined && typeof node.data.asset === 'string') {
+                doc = setAssetCategory(doc, node.data.asset, category);
+                refiled.set(node.data.asset, category);
+              }
               id = node.id; break;
             }
             case 'delete': doc = removeNodes(doc, need(op.ids, 'ids').map(ref)); break;
@@ -278,6 +303,12 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
         }
         return doc;
       });
+      // Re-file the library assets too (best effort: an asset file may be gone; the canvas edit stands).
+      const unfiled = [];
+      for (const [assetId, category] of refiled) {
+        if (library === undefined) break;
+        await library.update(dirname(canvasPath), assetId, { category }).catch(() => unfiled.push(assetId));
+      }
       const made = created.map((id, index) => (id ? `#${index} ${args.ops[index].op} → ${id}` : `#${index} ${args.ops[index].op} ✓`)).join('\n');
       // Started after the edit is on disk; completion shows up on the canvas (canvas_read reports status).
       const started = [];
@@ -286,7 +317,8 @@ export function registerTools(ctx, { store, generator, focus, attachments }) {
         catch (error) { started.push(`${node.id}（启动失败：${error.message}）`); }
       }
       const runs = started.length ? `\n已开始生成：${started.join('、')}。用 canvas_read 查看 status。` : '';
-      return { canvas: canvasPath, text: `已更新画布 ${canvasPath}（共 ${doc.nodes.length} 个节点）\n${made}${runs}` };
+      const lost = unfiled.length ? `\n素材库中找不到资产 ${unfiled.join('、')}，只更新了画布上的分类。` : '';
+      return { canvas: canvasPath, text: `已更新画布 ${canvasPath}（共 ${doc.nodes.length} 个节点）\n${made}${runs}${lost}` };
     },
   }), 'dsh-canvas: canvas_edit');
 

@@ -542,3 +542,45 @@ test('library: media is saved under a production category, re-filed, cleared; ba
   assert.equal(all.length, 3);
   assert.ok(all.filter((a) => a.id.startsWith('i_legacy')).every((a) => a.category === undefined));
 });
+
+test('agent tools: canvas_edit files image/video nodes under a production category and re-files their library asset', async () => {
+  const { cwd, canvas } = await workspace();
+  const m = mount();
+  const exec = m.exec(cwd);
+  const json = async (res) => { const value = await res.json(); assert.ok(res.ok, JSON.stringify(value)); return value; };
+  const read = async () => JSON.parse((await m.tools.get('canvas_read').execute({}, exec)).text).nodes;
+
+  // A category given when adding; nodes without one (and notes) stay uncategorised.
+  await m.tools.get('canvas_edit').execute({ ops: [
+    { op: 'add_image', path: 'ref.png', category: 'character', x: 0, y: 0 },
+    { op: 'add_image', prompt: '雨夜街道', category: 'scene', x: 400, y: 0 },
+    { op: 'add_image', path: 'ref.png', x: 800, y: 0 },
+    { op: 'add_text', text: 'note', x: 0, y: 400 },
+  ] }, exec);
+  let nodes = await read();
+  assert.deepEqual(nodes.map((n) => n.category), ['character', 'scene', undefined, undefined]);
+
+  // Two nodes bound to one library asset: re-filing either moves both, and the asset itself.
+  const [hero, , twin] = nodes;
+  const asset = (await json(await m.call('POST', '/api/canvas/library/save', { body: { path: canvas, kind: 'image', mediaPath: hero.path, category: 'character' } }))).asset;
+  const { doc, version } = await json(await m.call('GET', '/api/canvas/doc', { query: { path: canvas } }));
+  const bound = D.updateNode(D.updateNode(doc, hero.id, { data: { asset: asset.id } }), twin.id, { data: { asset: asset.id, category: 'character' } });
+  await json(await m.call('POST', '/api/canvas/save', { body: { path: canvas, doc: bound, baseVersion: version } }));
+  await m.tools.get('canvas_edit').execute({ ops: [{ op: 'update', id: hero.id, category: 'style' }] }, exec);
+  nodes = await read();
+  assert.deepEqual([nodes[0].category, nodes[2].category], ['style', 'style']);
+  const lib = async () => (await json(await m.call('GET', '/api/canvas/library', { query: { path: canvas } }))).assets.find((a) => a.id === asset.id);
+  assert.equal((await lib()).category, 'style');
+  // "none" clears it everywhere.
+  await m.tools.get('canvas_edit').execute({ ops: [{ op: 'update', id: twin.id, category: 'none' }] }, exec);
+  nodes = await read();
+  assert.deepEqual([nodes[0].category, nodes[2].category], [undefined, undefined]);
+  assert.equal((await lib()).category, undefined);
+
+  // Unknown categories and non-media nodes are refused, and the whole edit is dropped.
+  await assert.rejects(m.tools.get('canvas_edit').execute({ ops: [{ op: 'update', id: nodes[1].id, category: 'monster' }] }, exec), /未知的资产分类：monster/);
+  await assert.rejects(m.tools.get('canvas_edit').execute({ ops: [{ op: 'update', id: nodes[3].id, category: 'prop' }] }, exec), /只有图片\/视频节点/);
+  await assert.rejects(m.tools.get('canvas_edit').execute({ ops: [{ op: 'add_text', text: 'x' }, { op: 'add_video', prompt: 'x', category: 'bogus' }] }, exec), /未知的资产分类/);
+  assert.equal((await read()).length, 4);
+  assert.equal((await read())[1].category, 'scene');
+});
