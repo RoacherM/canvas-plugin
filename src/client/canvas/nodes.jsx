@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, NodeResizer, NodeToolbar, Position, useInternalNode, useStore } from '@xyflow/react';
-import { genOf, shownIndex, updateNode, versionsOf } from '../../shared/doc.js';
+import { ASSET_CATEGORIES, categoryOf, genOf, shownIndex, updateNode, versionsOf } from '../../shared/doc.js';
 import { api, assetAbsolute, baseName } from '../shared.js';
 import { Icon } from './icons.jsx';
 
@@ -243,9 +243,38 @@ function Running({ run }) {
 export const IMAGE_PRESETS = [
   { key: 'upscale', icon: 'sparkles', prompt: '高清修复：保持画面内容、构图和人物完全一致，提升清晰度与细节，去除噪点和模糊。' },
   { key: 'angle', icon: 'rotate', prompt: '保持同一主体、服装、场景和画风，把镜头换成另一个角度（例如侧面或俯视）重新拍摄这一画面。' },
+  { key: 'style', icon: 'palette', prompt: '保持画面内容、构图和主体完全一致，只改变整体美术风格：统一为一种鲜明的风格化画风（例如水彩、赛璐璐动画或胶片质感），色彩与笔触风格一致。' },
   { key: 'light', icon: 'sun', prompt: '保持画面内容与构图不变，改为电影感的戏剧性打光：明确的主光方向、柔和的轮廓光和有层次的阴影。' },
   { key: 'grid', icon: 'grid', prompt: '基于这张图，生成同一角色与场景的九宫格分镜（3x3），每格一个连续的镜头，风格统一。' },
 ];
+
+/**
+ * "Save to library": pick a production category and file the image the node shows in the library
+ * under it (LibTV-style asset categories). Re-saving with another category re-files the same asset.
+ */
+function SaveToLibrary({ id, node }) {
+  const canvas = useCanvas();
+  const { t } = canvas;
+  const current = categoryOf(node.data.category) ?? '';
+  const [category, setCategory] = React.useState(current);
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => setCategory(current), [current]);
+  const save = async () => {
+    setBusy(true);
+    try { await canvas.saveToLibrary(id, category || null); } finally { setBusy(false); }
+  };
+  return (
+    <span className="dshc-save-lib">
+      <Pill label={t('cat.assign')} value={category} onChange={(event) => setCategory(event.target.value)}>
+        <option value="">{t('cat.none')}</option>
+        {ASSET_CATEGORIES.map((key) => <option key={key} value={key}>{t('cat.' + key)}</option>)}
+      </Pill>
+      <button type="button" className="dshc-tbtn" disabled={busy} title={t('cat.saveHint')} onClick={save}>
+        <Icon name="library" size={15} /><span className="lbl">{t('cat.save')}</span>
+      </button>
+    </span>
+  );
+}
 
 /** The floating bar above a selected node; clears the title line above the card. */
 function NodeBar({ id, visible, width = 320, children }) {
@@ -276,9 +305,9 @@ export function ImageNode({ id, data, selected }) {
   const only = canvas.selectionCount === 1;
   return (
     <div className={'dshc-card dshc-media' + (selected ? ' is-selected' : '') + (hasImage ? '' : ' is-empty')} title={meta.prompt ?? ''}>
-      <NodeTitle icon="image" name={n.data.label || (hasImage ? baseName(absolute) : t('node.image'))} meta={dims(n.data)} generated={meta.source === 'generated'} />
+      <NodeTitle icon="image" name={n.data.label || (hasImage ? baseName(absolute) : t('node.image'))} meta={[categoryOf(n.data.category) ? t('cat.' + n.data.category) : '', dims(n.data)].filter(Boolean).join(' · ')} generated={meta.source === 'generated'} />
       <Resizer canvas={canvas} id={id} selected={selected} keepAspectRatio={hasImage} minWidth={60} minHeight={40} />
-      <NodeBar id={id} visible={selected && only && hasImage} width={500}>
+      <NodeBar id={id} visible={selected && only && hasImage} width={760}>
         {IMAGE_PRESETS.map((preset) => (
           <button key={preset.key} type="button" className="dshc-tbtn" title={t('preset.' + preset.key) + '：' + preset.prompt} onClick={() => canvas.derive(id, preset.prompt)}>
             <Icon name={preset.icon} size={15} /><span className="lbl">{t('preset.' + preset.key)}</span>
@@ -286,6 +315,8 @@ export function ImageNode({ id, data, selected }) {
         ))}
         <span className="dshc-sep" />
         <button type="button" className="dshc-tbtn" title={t('node.toVideo')} onClick={() => canvas.spawnVideo(id)}><Icon name="video" size={15} /><span className="lbl">{t('node.toVideo')}</span></button>
+        <span className="dshc-sep" />
+        <SaveToLibrary id={id} node={n} />
         <button type="button" className="dshc-ibtn" onClick={() => canvas.openFile(absolute)} aria-label={t('node.open')} title={t('node.open')}><Icon name="external" size={15} /></button>
       </NodeBar>
       {!hasImage

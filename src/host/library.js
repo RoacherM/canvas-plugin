@@ -11,12 +11,15 @@
 import { randomBytes } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
+import { ASSET_CATEGORIES, categoryOf } from '../shared/doc.js';
 import { imageSize } from './media.js';
 import { CANVAS_EXT, CanvasError } from './store.js';
 
 export const LIBRARY_DIR = 'library';
 export const HISTORY_FILE = 'history.jsonl';
 export const ASSET_KINDS = ['prompt', 'image', 'video', 'link'];
+/** Production categories an asset can be filed under, independent of its kind (see shared/doc.js). */
+export { ASSET_CATEGORIES };
 const PREFIX = { prompt: 'p', image: 'i', video: 'v', link: 'l' };
 const ID = /^[pivl]_[a-z0-9]{6,24}$/;
 const LINK_PAGE_BYTES = 1024 * 1024;
@@ -54,6 +57,7 @@ function normalizeAsset(raw) {
     createdAt: Number(raw.createdAt) || 0, updatedAt: Number(raw.updatedAt) || 0,
     labels, tags: Array.isArray(raw.tags) ? raw.tags.filter((t) => typeof t === 'string') : [],
     ...(raw.archived === true ? { archived: true } : {}),
+    ...(categoryOf(raw.category) ? { category: raw.category } : {}),
     versions,
   };
 }
@@ -64,7 +68,7 @@ export function summarize(asset) {
   const preview = asset.kind === 'prompt' ? { text: String(latest.text ?? '').slice(0, 300) }
     : asset.kind === 'link' ? { url: latest.url, title: latest.title, site: latest.site, image: latest.image }
       : { path: latest.path, naturalWidth: latest.naturalWidth, naturalHeight: latest.naturalHeight, prompt: latest.source?.text?.slice(0, 200) };
-  return { id: asset.id, kind: asset.kind, name: asset.name, labels: asset.labels, tags: asset.tags, archived: asset.archived === true,
+  return { id: asset.id, kind: asset.kind, name: asset.name, labels: asset.labels, tags: asset.tags, archived: asset.archived === true, ...(asset.category ? { category: asset.category } : {}),
     createdAt: asset.createdAt, updatedAt: asset.updatedAt, count: asset.versions.length, latest: { v: latest.v, at: latest.at, ...clean(preview) } };
 }
 
@@ -145,11 +149,11 @@ export function createLibrary({ now = () => Date.now(), fetchImpl = (...args) =>
     });
   }
 
-  async function create(root, kind, { name, versions, tags = [] }) {
+  async function create(root, kind, { name, versions, tags = [], category }) {
     if (!ASSET_KINDS.includes(kind)) throw new CanvasError('未知的资产类型：' + kind);
     const at = now();
     const id = newAssetId(kind);
-    return mutate(root, id, () => ({ id, kind, name, createdAt: at, updatedAt: at, labels: {}, tags,
+    return mutate(root, id, () => ({ id, kind, name, createdAt: at, updatedAt: at, labels: {}, tags, ...(categoryOf(category) ? { category } : {}),
       versions: versions.map((version, index) => clean({ ...version, v: index + 1, at })) }));
   }
 
@@ -199,6 +203,25 @@ export function createLibrary({ now = () => Date.now(), fetchImpl = (...args) =>
       ? await addVersions(root, existing.id, versions)
       : await create(root, kind, { name: name || kind, versions });
     return { id: asset.id, vs: asset.versions.slice(-versions.length).map((version) => version.v) };
+  }
+
+  /**
+   * File the media a canvas node shows under a production category ("save to library").
+   * Reuses the node's asset when it already holds that file; otherwise records the file as a new
+   * version (or a new asset). `category` null leaves the asset uncategorised.
+   * @returns the asset.
+   */
+  async function saveMedia(root, { kind, id, path, name, category = null, ...extra }) {
+    if (kind !== 'image' && kind !== 'video') throw new CanvasError('只能收藏图片或视频');
+    if (typeof path !== 'string' || path === '') throw new CanvasError('缺少媒体路径');
+    if (category !== null && !categoryOf(category)) throw new CanvasError('未知的资产分类：' + category);
+    const existing = id && ID.test(id) ? await read(root, id) : undefined;
+    let assetId = existing?.kind === kind && existing.versions.some((version) => version.path === path) ? existing.id : undefined;
+    if (assetId === undefined) {
+      const version = clean({ path, naturalWidth: extra.naturalWidth, naturalHeight: extra.naturalHeight, duration: extra.duration });
+      assetId = (await recordMedia(root, { kind, id: existing?.kind === kind ? existing.id : undefined, name, versions: [version] })).id;
+    }
+    return update(root, assetId, { category });
   }
 
   /** `id@v` of the version showing `path`, or the path itself for media outside the library. */
@@ -254,6 +277,11 @@ export function createLibrary({ now = () => Date.now(), fetchImpl = (...args) =>
       if (typeof patch.name === 'string' && patch.name.trim()) next.name = patch.name.trim().slice(0, 80);
       if (Array.isArray(patch.tags)) next.tags = patch.tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim().slice(0, 32)).slice(0, 20);
       if (typeof patch.archived === 'boolean') next.archived = patch.archived;
+      if (patch.category === null || patch.category === '') delete next.category;
+      else if (patch.category !== undefined) {
+        if (!categoryOf(patch.category)) throw new CanvasError('未知的资产分类：' + patch.category);
+        next.category = patch.category;
+      }
       return next;
     });
   }
@@ -310,5 +338,5 @@ export function createLibrary({ now = () => Date.now(), fetchImpl = (...args) =>
     } catch { return {}; }
   }
 
-  return { read, list, detail, create, addVersions, commitPrompt, recordMedia, refOfMedia, label, update, createLink, appendHistory, history, sizeOf };
+  return { read, list, detail, create, addVersions, commitPrompt, recordMedia, saveMedia, refOfMedia, label, update, createLink, appendHistory, history, sizeOf };
 }

@@ -92,7 +92,7 @@ async function until(check, ms = 3000) {
 test('declares only ctx services and registers routes and four tools', () => {
   assert.deepEqual(inject, ['connection', 'tools']);
   const m = mount();
-  assert.deepEqual([...m.routes.keys()].sort(), ['/api/canvas/attach', '/api/canvas/config', '/api/canvas/doc', '/api/canvas/focus', '/api/canvas/generate', '/api/canvas/history', '/api/canvas/import', '/api/canvas/library', '/api/canvas/library/asset', '/api/canvas/library/link', '/api/canvas/library/update', '/api/canvas/list', '/api/canvas/media', '/api/canvas/save', '/api/canvas/version']);
+  assert.deepEqual([...m.routes.keys()].sort(), ['/api/canvas/attach', '/api/canvas/config', '/api/canvas/doc', '/api/canvas/focus', '/api/canvas/generate', '/api/canvas/history', '/api/canvas/import', '/api/canvas/library', '/api/canvas/library/asset', '/api/canvas/library/link', '/api/canvas/library/save', '/api/canvas/library/update', '/api/canvas/list', '/api/canvas/media', '/api/canvas/save', '/api/canvas/version']);
   assert.equal(m.routes.get('/api/canvas/import').requestBody, 'streaming');
   assert.deepEqual(m.routes.get('/api/canvas/media').methods, ['GET', 'HEAD']);
   assert.deepEqual([...m.tools.keys()], ['canvas_read', 'canvas_edit', 'canvas_generate_image', 'canvas_generate_video']);
@@ -496,4 +496,49 @@ test('library: a pasted link becomes an asset with its title and preview image',
   assert.match(asset.versions[0].image, /^assets\/link-.*\.png$/);
   const bad = await m.call('POST', '/api/canvas/library/link', { body: { path: canvas, url: 'file:///etc/passwd' } });
   assert.equal(bad.status, 400);
+});
+
+test('library: media is saved under a production category, re-filed, cleared; bad categories are refused', async () => {
+  const { cwd, canvas } = await workspace();
+  const m = mount();
+  const json = async (res) => { const value = await res.json(); assert.ok(res.ok, JSON.stringify(value)); return value; };
+  const lib = async () => (await json(await m.call('GET', '/api/canvas/library', { query: { path: canvas } }))).assets;
+
+  // A file the library has never seen (e.g. placed by the agent) becomes a new categorised asset.
+  const saved = (await json(await m.call('POST', '/api/canvas/library/save', { body: { path: canvas, kind: 'image', mediaPath: 'assets/hero.png', name: '主角', category: 'character', naturalWidth: 300, naturalHeight: 200 } }))).asset;
+  assert.match(saved.id, /^i_/);
+  assert.equal(saved.category, 'character');
+  assert.equal(saved.name, '主角');
+  assert.deepEqual([saved.versions[0].path, saved.versions[0].naturalWidth], ['assets/hero.png', 300]);
+
+  // Saving the same file again re-files the same asset without adding a version.
+  const again = (await json(await m.call('POST', '/api/canvas/library/save', { body: { path: canvas, kind: 'image', asset: saved.id, mediaPath: 'assets/hero.png', category: 'style' } }))).asset;
+  assert.equal(again.id, saved.id);
+  assert.equal(again.versions.length, 1);
+  assert.equal(again.category, 'style');
+  // A new file shown by the same node becomes the asset's next version.
+  const next = (await json(await m.call('POST', '/api/canvas/library/save', { body: { path: canvas, kind: 'image', asset: saved.id, mediaPath: 'assets/hero-2.png', category: 'style' } }))).asset;
+  assert.deepEqual([next.id, next.versions.length], [saved.id, 2]);
+
+  // The list carries the category; the update route re-files and clears it.
+  assert.equal((await lib()).find((a) => a.id === saved.id).category, 'style');
+  let res = await json(await m.call('POST', '/api/canvas/library/update', { body: { path: canvas, id: saved.id, action: 'category', category: 'scene' } }));
+  assert.equal(res.asset.category, 'scene');
+  res = await json(await m.call('POST', '/api/canvas/library/update', { body: { path: canvas, id: saved.id, action: 'category', category: null } }));
+  assert.equal(res.asset.category, undefined);
+  assert.equal((await lib()).find((a) => a.id === saved.id).category, undefined);
+
+  // Unknown categories and non-media kinds are refused; nothing is written for them.
+  assert.equal((await m.call('POST', '/api/canvas/library/update', { body: { path: canvas, id: saved.id, action: 'category', category: 'monster' } })).status, 400);
+  assert.equal((await m.call('POST', '/api/canvas/library/save', { body: { path: canvas, kind: 'image', mediaPath: 'assets/x.png', category: 'monster' } })).status, 400);
+  assert.equal((await m.call('POST', '/api/canvas/library/save', { body: { path: canvas, kind: 'prompt', mediaPath: 'assets/x.png' } })).status, 400);
+  assert.equal((await lib()).length, 1);
+
+  // Asset files written before categories existed (and ones with a junk category) still load.
+  const dir = join(cwd, 'canvas', 'library');
+  await writeFile(join(dir, 'i_legacy01.json'), JSON.stringify({ id: 'i_legacy01', kind: 'image', name: 'old', versions: [{ v: 1, path: 'assets/old.png' }] }));
+  await writeFile(join(dir, 'i_legacy02.json'), JSON.stringify({ id: 'i_legacy02', kind: 'image', name: 'odd', category: 'monster', versions: [{ v: 1, path: 'assets/odd.png' }] }));
+  const all = await lib();
+  assert.equal(all.length, 3);
+  assert.ok(all.filter((a) => a.id.startsWith('i_legacy')).every((a) => a.category === undefined));
 });

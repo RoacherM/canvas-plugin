@@ -130,3 +130,29 @@ test('library links merge on their own clocks: a stale browser copy keeps the Ho
   const unbound = D.updateNode(host, 'm', { data: { gen: { prompt: 'x', bind: { at: 40 } } } }, 40);
   assert.equal(D.promptRefOf(D.mergeDocs(host, unbound, 50).nodes[0]), undefined);
 });
+
+test('asset categories: known ones survive normalize and summary; unknown ones drop; old docs stay valid', () => {
+  assert.deepEqual(D.ASSET_CATEGORIES, ['character', 'scene', 'prop', 'style', 'audio']);
+  assert.equal(D.categoryOf('scene'), 'scene');
+  assert.equal(D.categoryOf('Scene'), undefined);
+  assert.equal(D.categoryOf(3), undefined);
+  const doc = D.normalizeDoc({ nodes: [
+    img('c', 0, 0, { data: { path: 'assets/c.png', category: 'character' } }),
+    img('x', 0, 0, { data: { path: 'assets/x.png', category: 'monster' } }),
+    img('old'),
+  ] });
+  assert.equal(doc.nodes[0].data.category, 'character');
+  assert.equal('category' in doc.nodes[1].data, false, 'an unknown category is dropped, the node is kept');
+  assert.equal('category' in doc.nodes[2].data, false, 'documents from before categories load unchanged');
+  const summary = D.summarize(doc);
+  assert.equal(summary.nodes[0].category, 'character');
+  assert.equal(summary.nodes[2].category, undefined);
+  // A newer category edit wins a merge like any other node edit.
+  const retagged = D.updateNode(doc, 'c', { data: { category: 'style' } }, Date.now() + 10);
+  assert.equal(D.mergeDocs(doc, retagged).nodes[0].data.category, 'style');
+  // Filtering.
+  const items = [{ category: 'prop' }, { category: 'audio' }, {}, { category: 'bogus' }];
+  assert.equal(items.filter((i) => D.matchesCategory(i, 'all')).length, 4);
+  assert.deepEqual(items.filter((i) => D.matchesCategory(i, 'prop')), [{ category: 'prop' }]);
+  assert.deepEqual(items.filter((i) => D.matchesCategory(i, 'none')), [{}, { category: 'bogus' }]);
+});

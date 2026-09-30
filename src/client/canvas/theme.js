@@ -259,6 +259,13 @@ export const css = `
   .dshc-lib-tabs button { flex:none; height:26px; padding:0 10px; border:none; border-radius:7px; background:transparent; color:var(--c-muted); font-size:12px; cursor:pointer; }
   .dshc-lib-tabs button:hover { background:var(--c-hover); color:var(--c-text); }
   .dshc-lib-tabs button.on { background:var(--c-active); color:var(--c-text); }
+  .dshc-lib-cats { display:flex; flex-wrap:wrap; gap:4px; padding:0 12px 8px; }
+  .dshc-lib-cats button { height:22px; padding:0 8px; border:1px solid var(--c-ctl-border); border-radius:11px; background:transparent; color:var(--c-muted); font-size:11px; cursor:pointer; }
+  .dshc-lib-cats button:hover { color:var(--c-text); }
+  .dshc-lib-cats button.on { border-color:transparent; background:var(--c-brand-surface); color:var(--c-brand-text); }
+  .dshc-lib-cat select { height:20px; padding:0 4px; border:1px solid var(--c-ctl-border); border-radius:6px; background:var(--c-input); color:var(--c-text); font:inherit; font-size:11px; outline:none; cursor:pointer; }
+  .dshc-tag.cat { background:#000000a0; color:#fff; }
+  .dshc-save-lib { display:inline-flex; align-items:center; gap:4px; }
   .dshc-lib-search { display:flex; align-items:center; gap:6px; margin:0 12px 8px; padding:0 4px 0 10px; height:32px; border-radius:9px; background:var(--c-input); color:var(--c-muted); }
   .dshc-lib-search input { flex:1; min-width:0; height:100%; border:none; background:transparent; color:var(--c-text); font:inherit; font-size:12px; outline:none; }
   .dshc-lib-search input::placeholder { color:var(--c-muted); }

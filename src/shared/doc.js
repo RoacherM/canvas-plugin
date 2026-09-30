@@ -10,6 +10,19 @@ export const DOC_VERSION = 1;
 export const NODE_TYPES = ['image', 'video', 'text', 'generator', 'frame', 'script', 'link'];
 /** `shot` links a storyboard row of a script node to the image made for it. */
 export const EDGE_ROLES = ['reference', 'first_frame', 'last_frame', 'output', 'shot'];
+/**
+ * Production asset categories (LibTV style): what a piece of media is *for* in a production, as opposed
+ * to its media kind. Optional everywhere; documents and library assets without one stay valid.
+ */
+export const ASSET_CATEGORIES = ['character', 'scene', 'prop', 'style', 'audio'];
+/** A known category, or undefined for anything else (absent, unknown, wrong type). */
+export const categoryOf = (value) => (typeof value === 'string' && ASSET_CATEGORIES.includes(value) ? value : undefined);
+/** Whether an asset (or node data) with `category` passes a filter: `all`, `none` (uncategorised) or one category. */
+export function matchesCategory(item, filter = 'all') {
+  if (filter === 'all') return true;
+  const category = categoryOf(item?.category);
+  return filter === 'none' ? category === undefined : category === filter;
+}
 const TOMBSTONE_TTL = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_SIZE = {
   image: { w: 320, h: 320 }, video: { w: 400, h: 225 }, text: { w: 240, h: 120 },
@@ -54,6 +67,7 @@ function normalizeNode(raw, now) {
     updatedAt: finite(raw.updatedAt, now),
   };
   if (typeof raw.parentId === 'string' && raw.parentId !== '') node.parentId = raw.parentId;
+  if (node.data.category !== undefined && categoryOf(node.data.category) === undefined) delete node.data.category;
   return node.type === 'image' || node.type === 'video' ? mirrorShown(node) : node;
 }
 
@@ -345,6 +359,7 @@ export function summarize(doc, selection = []) {
         if (d.gen?.prompt) out.gen_prompt = text(d.gen.prompt).slice(0, 300);
         if (promptRefOf(node)) out.prompt_ref = promptRefOf(node);
         if (d.asset) out.asset = d.asset;
+        if (categoryOf(d.category)) out.category = d.category;
         const versions = versionsOf(node);
         if (versions.length > 1) out.version = `${shownIndex(node, versions) + 1}/${versions.length}`;
         const run = runOf(doc, node.id);

@@ -366,6 +366,64 @@ test('library: the node shows its prompt version, the drawer lists versions with
   act(() => root.unmount());
 });
 
+test('asset categories: the image bar saves to the library under a category, the drawer filters and re-files it; the style preset derives', async () => {
+  const canvasPath = join(cwd, 'canvas', 'cats.dshcanvas');
+  const { root } = mountTab(address('canvas/cats.dshcanvas'));
+  await waitFor(() => document.querySelector('.dshc-topbar'));
+  await click(document.querySelector('[aria-label="添加节点"]'));
+  await click([...document.querySelectorAll('.dshc-menu button')].find((b) => b.querySelector('.label')?.textContent === '图片'));
+  const panel = await waitFor(() => document.querySelector('.dshc-panel'));
+  await typeInto(panel.querySelector('textarea'), '红斗篷少女，全身立绘');
+  await click(panel.querySelector('.dshc-send'));
+  let doc = await waitDoc(canvasPath, (d) => d.nodes[0]?.data.path && d.nodes[0].data.asset);
+  const id = doc.nodes[0].id;
+  const generatedAsset = doc.nodes[0].data.asset;
+
+  // The floating bar: pick 角色 and save; the node remembers its category, the asset is re-filed (not duplicated).
+  const pick = await waitFor(() => document.querySelector('.dshc-nodebar select[aria-label="资产分类"]'));
+  assert.deepEqual([...pick.options].map((o) => o.textContent), ['未分类', '角色', '场景', '道具', '风格', '音频']);
+  await act(async () => { Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, 'value').set.call(pick, 'character'); pick.dispatchEvent(new w.Event('change', { bubbles: true })); });
+  await click(button('存入素材库'));
+  doc = await waitDoc(canvasPath, (d) => d.nodes[0].data.category === 'character');
+  assert.equal(doc.nodes[0].data.asset, generatedAsset);
+  await waitFor(() => document.body.textContent.includes('已存入素材库 · 角色'));
+  assert.match(document.querySelector(`[data-id="${id}"] .dshc-node-title`).textContent, /角色/);
+
+  // The drawer: the category chips filter the list; the card shows its category.
+  await click(document.querySelector('[aria-label="素材库"]'));
+  const drawer = await waitFor(() => document.querySelector('.dshc-drawer .dshc-lib-cats') && document.querySelector('.dshc-drawer'));
+  const chip = (label) => [...drawer.querySelectorAll('.dshc-lib-cats button')].find((b) => b.textContent === label);
+  await click(chip('角色'));
+  await waitFor(() => drawer.querySelectorAll('.dshc-lib-card').length === 1);
+  const card = drawer.querySelector('.dshc-lib-card');
+  assert.ok(card.classList.contains('kind-image'));
+  assert.match(card.querySelector('.tags').textContent, /角色/);
+  await click(chip('场景'));
+  await waitFor(() => drawer.querySelectorAll('.dshc-lib-card').length === 0);
+
+  // Re-file from the detail view, then the 场景 filter finds it.
+  await click(chip('全部分类'));
+  await waitFor(() => drawer.querySelector('.dshc-lib-card.kind-image'));
+  await click(drawer.querySelector('.dshc-lib-card.kind-image'));
+  const assign = await waitFor(() => drawer.querySelector('.dshc-lib-sub select[aria-label="资产分类"]'));
+  assert.equal(assign.value, 'character');
+  await act(async () => { Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, 'value').set.call(assign, 'scene'); assign.dispatchEvent(new w.Event('change', { bubbles: true })); });
+  await waitFor(() => drawer.querySelector('.dshc-lib-sub select')?.value === 'scene');
+  await click(drawer.querySelector('[aria-label="返回"]'));
+  await waitFor(() => drawer.querySelector('.dshc-lib-cats'));
+  await click(chip('场景'));
+  await waitFor(() => drawer.querySelectorAll('.dshc-lib-card.kind-image').length === 1);
+  await click(drawer.querySelector('[aria-label="关闭素材库"]'));
+
+  // The style preset makes a new node referencing this one, with a style-transfer prompt.
+  await act(async () => { document.querySelector(`[data-id="${id}"]`).dispatchEvent(new w.MouseEvent('click', { bubbles: true })); });
+  await click(await waitFor(() => button('风格')));
+  doc = await waitDoc(canvasPath, (d) => d.nodes.length === 2 && d.nodes[1].data.path);
+  assert.deepEqual(doc.edges.map((e) => [e.source, e.target, e.role]), [[id, doc.nodes[1].id, 'reference']]);
+  assert.match(arkCalls.at(-1).prompt, /美术风格/);
+  act(() => root.unmount());
+});
+
 test('tool card offers to open the canvas the tool touched', () => {
   const Card = views.get('tool.call.toolview:canvas_edit');
   const container = document.createElement('div');

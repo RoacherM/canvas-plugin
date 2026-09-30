@@ -1,4 +1,5 @@
 import React from 'react';
+import { ASSET_CATEGORIES, categoryOf, matchesCategory } from '../../shared/doc.js';
 import { api, assetAbsolute } from '../shared.js';
 import { Icon } from './icons.jsx';
 
@@ -6,6 +7,9 @@ import { Icon } from './icons.jsx';
 export const ASSET_MIME = 'application/x-dshc-asset';
 const KIND_ICON = { prompt: 'text', image: 'image', video: 'video', link: 'link' };
 const TABS = ['all', 'prompt', 'image', 'video', 'link', 'history'];
+/** Category filter chips: every production category, plus all and uncategorised. */
+const CATEGORY_FILTERS = ['all', ...ASSET_CATEGORIES, 'none'];
+
 
 function ago(t, at) {
   if (!at) return '';
@@ -56,7 +60,12 @@ function Card({ canvasPath, t, item, onOpen }) {
         <span className="name">{item.kind === 'link' ? (latest.title || item.name) : item.name}</span>
         <span className="ver">v{latest.v}{item.count > 1 ? `/${item.count}` : ''}</span>
       </div>
-      {tagged.length ? <div className="tags">{tagged.slice(0, 2).map((name) => <span key={name} className="dshc-tag on">{name}</span>)}</div> : null}
+      {tagged.length || categoryOf(item.category) ? (
+        <div className="tags">
+          {categoryOf(item.category) ? <span className={'dshc-tag cat cat-' + item.category}>{t('cat.' + item.category)}</span> : null}
+          {tagged.slice(0, 2).map((name) => <span key={name} className="dshc-tag on">{name}</span>)}
+        </div>
+      ) : null}
       <span className="sr">{t('lib.kind.' + item.kind)}</span>
     </button>
   );
@@ -157,6 +166,7 @@ function Detail({ t, canvasPath, id, reload, actions, onBack }) {
   const { asset } = data;
   const rename = act(() => (name.trim() && name !== asset.name ? api.libraryUpdate(canvasPath, asset.id, 'rename', { name }) : undefined));
   const link = asset.kind === 'link' ? asset.versions.at(-1) : undefined;
+  const setCategory = act((category) => api.libraryUpdate(canvasPath, asset.id, 'category', { category }));
   return (
     <div className="dshc-lib-detail nowheel">
       <div className="dshc-lib-head">
@@ -167,6 +177,13 @@ function Detail({ t, canvasPath, id, reload, actions, onBack }) {
       </div>
       <div className="dshc-lib-sub">
         <code>{asset.id}</code>
+        <label className="dshc-lib-cat">
+          <select value={categoryOf(asset.category) ?? ''} aria-label={t('cat.assign')} title={t('cat.assign')}
+            onChange={(event) => setCategory(event.target.value || null)}>
+            <option value="">{t('cat.none')}</option>
+            {ASSET_CATEGORIES.map((key) => <option key={key} value={key}>{t('cat.' + key)}</option>)}
+          </select>
+        </label>
         {data.usedBy?.length ? <span>{t('lib.usedBy', { list: data.usedBy.join('、') })}</span> : <span>{t('lib.unused')}</span>}
       </div>
       <div className="dshc-lib-scroll">
@@ -222,6 +239,7 @@ function History({ t, canvasPath, reload, open }) {
  */
 export function LibraryDrawer({ t, canvasPath, refresh, focus, onClose, actions }) {
   const [tab, setTab] = React.useState('all');
+  const [category, setCategory] = React.useState('all');
   const [query, setQuery] = React.useState('');
   const [items, setItems] = React.useState(null);
   const [open, setOpen] = React.useState(null);
@@ -236,8 +254,9 @@ export function LibraryDrawer({ t, canvasPath, refresh, focus, onClose, actions 
   const changed = () => { api.library(canvasPath).then((result) => setItems(result?.assets ?? []), () => {}); actions.changed?.(); };
   const all = { ...actions, open: setOpen, changed };
   const q = query.trim().toLowerCase();
-  const shown = (items ?? []).filter((item) => !item.archived && (tab === 'all' || item.kind === tab)
-    && (!q || [item.name, item.latest.text, item.latest.title, item.latest.url, item.latest.prompt, ...Object.keys(item.labels ?? {})].some((s) => s && String(s).toLowerCase().includes(q))));
+  const shown = (items ?? []).filter((item) => !item.archived && (tab === 'all' || item.kind === tab) && matchesCategory(item, category)
+    && (!q || [item.name, item.latest.text, item.latest.title, item.latest.url, item.latest.prompt, ...Object.keys(item.labels ?? {}), categoryOf(item.category) ? t('cat.' + item.category) : '']
+      .some((s) => s && String(s).toLowerCase().includes(q))));
   const addLink = async () => { if (!url.trim()) return; const ok = await actions.addLink(url.trim()); if (ok) { setUrl(''); changed(); } };
   return (
     <aside className="dshc-drawer dshc-float nodrag nowheel" aria-label={t('lib.title')} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); if (open) setOpen(null); else onClose(); } }}>
@@ -254,6 +273,11 @@ export function LibraryDrawer({ t, canvasPath, refresh, focus, onClose, actions 
           </div>
           {tab === 'history' ? <History t={t} canvasPath={canvasPath} reload={tick} open={setOpen} /> : (
             <>
+              <div className="dshc-lib-cats" role="group" aria-label={t('cat.filter')}>
+                {CATEGORY_FILTERS.map((key) => (
+                  <button key={key} type="button" aria-pressed={category === key} className={category === key ? 'on' : ''} onClick={() => setCategory(key)}>{t('cat.' + key)}</button>
+                ))}
+              </div>
               <div className="dshc-lib-search">
                 <Icon name="search" size={14} />
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('lib.search')} aria-label={t('lib.search')} />

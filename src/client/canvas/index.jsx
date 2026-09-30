@@ -315,6 +315,19 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
       select([id]);
       await startRuns([id]);
     },
+    /** File the media a node shows in the library under a production category (null: uncategorised). */
+    saveToLibrary: async (id, category) => {
+      const node = nodeOf(id);
+      if (!node || typeof node.data.path !== 'string') return;
+      try {
+        const { asset } = await api.saveToLibrary(path, {
+          kind: node.type, asset: node.data.asset, mediaPath: node.data.path, name: node.data.label || undefined, category,
+          naturalWidth: node.data.naturalWidth, naturalHeight: node.data.naturalHeight, duration: node.data.duration,
+        });
+        doc.change((d) => updateNode(d, id, { data: { asset: asset.id, category: category ?? undefined } }));
+        setToast(t('cat.saved', { cat: t(category ? 'cat.' + category : 'cat.none') }));
+      } catch (error) { setToast(error.message); }
+    },
     addRow: (scriptId) => setRows(scriptId, (rows) => [...rows, newRow()]),
     removeRow: (scriptId, rowId) => setRows(scriptId, (rows) => rows.filter((row) => row.id !== rowId)),
     updateRow: (scriptId, rowId, patch) => setRows(scriptId, (rows) => rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row))),

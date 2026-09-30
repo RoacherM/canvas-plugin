@@ -145,6 +145,7 @@ export function registerRoutes(ctx, { store, generator, library, focus, credenti
       switch (input.action) {
         case 'rename': return json({ asset: await library.update(root, id, { name: input.name }) });
         case 'tags': return json({ asset: await library.update(root, id, { tags: input.tags }) });
+        case 'category': return json({ asset: await library.update(root, id, { category: input.category ?? null }) });
         case 'archive': return json({ asset: await library.update(root, id, { archived: input.archived !== false }) });
         case 'label': return json({ asset: await library.label(root, id, input.label, Number.isInteger(input.v) ? input.v : null) });
         case 'commit': {
@@ -163,6 +164,17 @@ export function registerRoutes(ctx, { store, generator, library, focus, credenti
         }
         default: throw new CanvasError('未知操作：' + input.action);
       }
+    }],
+    ['POST', '/api/canvas/library/save', async (request) => {
+      // "Save to library" from a media node: file what it shows under a production category.
+      if (library === undefined) throw new CanvasError('素材库不可用', 503);
+      const input = await body(request);
+      const root = rootOf(input.path);
+      const extra = {};
+      for (const key of ['naturalWidth', 'naturalHeight', 'duration']) if (Number.isFinite(input[key])) extra[key] = input[key];
+      const asset = await library.saveMedia(root, { kind: input.kind, id: typeof input.asset === 'string' ? input.asset : undefined, path: input.mediaPath,
+        name: String(input.name ?? '').trim().slice(0, 80) || undefined, category: input.category ?? null, ...extra });
+      return json({ asset });
     }],
     ['POST', '/api/canvas/library/link', async (request) => {
       if (library === undefined) throw new CanvasError('素材库不可用', 503);
