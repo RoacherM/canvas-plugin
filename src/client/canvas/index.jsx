@@ -33,6 +33,51 @@ const imageDims = (file) => (typeof createImageBitmap === 'function'
 const UI_KEY = 'dsh-canvas:ui';
 const UI_DEFAULTS = { theme: 'auto', minimap: false, edges: true, snap: false, mode: 'hand' };
 
+/** Draggable float position offset stored in localStorage, with reset. */
+function useDraggableOffset(key) {
+  const [pos, setPos] = React.useState(() => {
+    try {
+      const s = localStorage.getItem(key);
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+      }
+    } catch {}
+    return { x: 0, y: 0 };
+  });
+
+  const onStart = React.useCallback((event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = { ...pos };
+    let cur = origin;
+
+    const onMove = (e) => {
+      cur = { x: origin.x + (e.clientX - startX), y: origin.y + (e.clientY - startY) };
+      setPos(cur);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      try { localStorage.setItem(key, JSON.stringify(cur)); } catch {}
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [pos, key]);
+
+  const reset = React.useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setPos({ x: 0, y: 0 });
+    try { localStorage.removeItem(key); } catch {}
+  }, [key]);
+
+  return [pos, onStart, reset];
+}
+
 /** Canvas chrome preferences (theme, minimap, edges, snapping, drag mode), kept across canvases. */
 function useUiPrefs() {
   const [prefs, setPrefs] = React.useState(() => { try { return { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(UI_KEY) ?? '{}') }; } catch { return UI_DEFAULTS; } });
@@ -121,6 +166,8 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
   const dark = prefs.theme === 'auto' ? hostDark : prefs.theme === 'dark';
   const [connecting, setConnecting] = React.useState(false);
   const [keys, setKeys] = React.useState(false);
+  const [dockPos, onDockDragStart, resetDockPos] = useDraggableOffset('dsh-canvas:dock-pos');
+  const [mapPos, onMapDragStart, resetMapPos] = useDraggableOffset('dsh-canvas:map-pos');
   // The library drawer: null while closed; `focus` opens one asset's details.
   const [library, setLibrary] = React.useState(null);
   const zoom = useStore((state) => state.transform[2]);
@@ -539,7 +586,23 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
           snapToGrid={prefs.snap} snapGrid={[20, 20]} proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.3} />
-          {prefs.minimap ? <MiniMap className="dshc-minimap" pannable zoomable position="bottom-left" nodeBorderRadius={4} nodeStrokeWidth={0} ariaLabel={t('ctl.minimap')} /> : null}
+          {prefs.minimap ? (
+            <div
+              className="dshc-minimap-wrap"
+              style={{
+                transform: mapPos.x || mapPos.y ? `translate(${mapPos.x}px, ${mapPos.y}px)` : undefined,
+              }}
+            >
+              <div className="dshc-minimap-bar" onMouseDown={onMapDragStart} onDoubleClick={resetMapPos} title={t('ctl.mapDragHint')}>
+                <span className="grip"><Icon name="grip" size={12} /></span>
+                <span className="lbl">{t('ctl.minimap')}</span>
+                <button type="button" className="close" onClick={() => setPrefs({ minimap: false })} aria-label={t('close')} title={t('close')}>
+                  <Icon name="close" size={12} />
+                </button>
+              </div>
+              <MiniMap className="dshc-minimap" pannable zoomable position="bottom-left" nodeBorderRadius={4} nodeStrokeWidth={0} ariaLabel={t('ctl.minimap')} />
+            </div>
+          ) : null}
           <Panel position="top-left">
             <div className="dshc-topbar dshc-float">
               <span className="name" title={path}>{canvasName(path)}</span>
@@ -564,9 +627,17 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
             </div>
           </Panel>
           <Panel position="bottom-center">
-            <div className="dshc-bottom">
+            <div className="dshc-bottom" style={{ transform: dockPos.x || dockPos.y ? `translate(${dockPos.x}px, ${dockPos.y}px)` : undefined }}>
               {toast ? <div className="dshc-toast dshc-float" role="status">{toast}</div> : null}
               <div className="dshc-dock dshc-float" style={{ position: 'relative' }}>
+                <div
+                  className="dshc-drag-handle"
+                  title={t('ctl.dragHint')}
+                  onMouseDown={onDockDragStart}
+                  onDoubleClick={resetDockPos}
+                >
+                  <Icon name="grip" size={14} />
+                </div>
                 <button type="button" className="dshc-ibtn add" aria-expanded={menu?.anchor === 'dock'} aria-label={t('menu.title')}
                   onClick={() => { setKeys(false); setMenu(menu?.anchor === 'dock' ? null : { anchor: 'dock', at: center() }); }}>
                   <Icon name="plus" size={16} /><span className="lbl">{t('menu.title')}</span>
@@ -579,19 +650,18 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
                 <button type="button" className="dshc-ibtn" onClick={() => fileInput.current?.click()} aria-label={t('add.import')} title={t('add.import')}><Icon name="upload" size={16} /></button>
                 <button type="button" className="dshc-ibtn" aria-pressed={keys} onClick={() => { setMenu(null); setKeys(!keys); }} aria-label={t('keys.title')} title={t('keys.title')}><Icon name="keyboard" size={16} /></button>
                 {keys ? <Shortcuts t={t} /> : null}
+
+                <span className="dshc-sep" />
+
+                <button type="button" className="dshc-ibtn" aria-pressed={prefs.minimap} onClick={() => setPrefs({ minimap: !prefs.minimap })} aria-label={t('ctl.minimap')} title={t('ctl.minimap')}><Icon name="map" size={16} /></button>
+                <button type="button" className="dshc-ibtn" aria-pressed={!prefs.edges} onClick={() => setPrefs({ edges: !prefs.edges })} aria-label={t('ctl.edges')} title={t('ctl.edges')}><Icon name="edges" size={16} /></button>
+                <button type="button" className="dshc-ibtn" aria-pressed={prefs.snap} onClick={() => setPrefs({ snap: !prefs.snap })} aria-label={t('ctl.snap')} title={t('ctl.snap')}><Icon name="grid" size={16} /></button>
+                <span className="dshc-sep" />
+                <button type="button" className="dshc-ibtn" onClick={() => flow.zoomOut({ duration: 200 })} aria-label={t('ctl.zoomOut')} title={t('ctl.zoomOut')}><Icon name="minus" size={16} /></button>
+                <button type="button" className="dshc-zoom" onClick={() => flow.zoomTo(1, { duration: 200 })} title={t('ctl.zoomReset')}>{Math.round(zoom * 100)}%</button>
+                <button type="button" className="dshc-ibtn" onClick={() => flow.zoomIn({ duration: 200 })} aria-label={t('ctl.zoomIn')} title={t('ctl.zoomIn')}><Icon name="plus" size={16} /></button>
+                <button type="button" className="dshc-ibtn" onClick={() => flow.fitView({ padding: 0.2, maxZoom: 1, duration: 300 })} aria-label={t('fit')} title={t('fit')}><Icon name="fit" size={16} /></button>
               </div>
-            </div>
-          </Panel>
-          <Panel position="bottom-left">
-            <div className="dshc-controls dshc-float">
-              <button type="button" className="dshc-ibtn" aria-pressed={prefs.minimap} onClick={() => setPrefs({ minimap: !prefs.minimap })} aria-label={t('ctl.minimap')} title={t('ctl.minimap')}><Icon name="map" size={16} /></button>
-              <button type="button" className="dshc-ibtn" aria-pressed={!prefs.edges} onClick={() => setPrefs({ edges: !prefs.edges })} aria-label={t('ctl.edges')} title={t('ctl.edges')}><Icon name="edges" size={16} /></button>
-              <button type="button" className="dshc-ibtn" aria-pressed={prefs.snap} onClick={() => setPrefs({ snap: !prefs.snap })} aria-label={t('ctl.snap')} title={t('ctl.snap')}><Icon name="grid" size={16} /></button>
-              <span className="dshc-sep" />
-              <button type="button" className="dshc-ibtn" onClick={() => flow.zoomOut({ duration: 200 })} aria-label={t('ctl.zoomOut')} title={t('ctl.zoomOut')}><Icon name="minus" size={16} /></button>
-              <button type="button" className="dshc-zoom" onClick={() => flow.zoomTo(1, { duration: 200 })} title={t('ctl.zoomReset')}>{Math.round(zoom * 100)}%</button>
-              <button type="button" className="dshc-ibtn" onClick={() => flow.zoomIn({ duration: 200 })} aria-label={t('ctl.zoomIn')} title={t('ctl.zoomIn')}><Icon name="plus" size={16} /></button>
-              <button type="button" className="dshc-ibtn" onClick={() => flow.fitView({ padding: 0.2, maxZoom: 1, duration: 300 })} aria-label={t('fit')} title={t('fit')}><Icon name="fit" size={16} /></button>
             </div>
           </Panel>
         </ReactFlow>

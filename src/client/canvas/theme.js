@@ -69,12 +69,22 @@ export const css = `
   .dshc-actions .count { min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--c-primary-bg); color:var(--c-primary-fg); font-size:11px; line-height:16px; text-align:center; }
 
   .dshc-bottom { display:flex; flex-direction:column; align-items:center; gap:8px; }
-  .dshc-dock { display:flex; align-items:center; gap:2px; padding:4px; }
+  .dshc-dock { display:flex; align-items:center; gap:2px; padding:4px; max-width:calc(100vw - 32px); flex-wrap:nowrap; }
+  .dshc-drag-handle { display:flex; align-items:center; justify-content:center; width:14px; height:28px; margin:0 2px 0 1px; color:var(--c-icon); opacity:.45; cursor:grab; border-radius:4px; transition:opacity .15s, background .15s; user-select:none; }
+  .dshc-drag-handle:hover { opacity:1; background:var(--c-hover); }
+  .dshc-drag-handle:active { cursor:grabbing; }
   .dshc-dock .add { width:auto; padding:0 12px 0 8px; gap:4px; font-size:13px; color:var(--c-text); }
   .dshc-controls { display:flex; align-items:center; gap:2px; padding:4px; }
-  .dshc-zoom { min-width:46px; height:32px; padding:0 4px; border:none; border-radius:8px; background:transparent; color:var(--c-text); font-size:12px; font-variant-numeric:tabular-nums; cursor:pointer; }
+  .dshc-zoom { min-width:44px; height:32px; padding:0 4px; border:none; border-radius:8px; background:transparent; color:var(--c-text); font-size:12px; font-variant-numeric:tabular-nums; cursor:pointer; }
   .dshc-zoom:hover { background:var(--c-hover); }
-  .dshc-root .react-flow__minimap.dshc-minimap { margin-bottom:60px; overflow:hidden; border:.5px solid var(--c-ctl-border); border-radius:12px; box-shadow:var(--c-shadow-panel); }
+  .dshc-minimap-wrap { position:absolute; bottom:66px; left:14px; z-index:10; display:flex; flex-direction:column; overflow:hidden; border:.5px solid var(--c-ctl-border); border-radius:12px; background:color-mix(in srgb, var(--c-ctl-bg) 92%, transparent); backdrop-filter:blur(16px); box-shadow:var(--c-shadow-panel); }
+  .dshc-minimap-bar { display:flex; align-items:center; gap:6px; padding:4px 8px; background:color-mix(in srgb, var(--c-soft) 85%, transparent); border-bottom:.5px solid var(--c-ctl-border); font-size:11px; color:var(--c-muted); cursor:grab; user-select:none; }
+  .dshc-minimap-bar:active { cursor:grabbing; }
+  .dshc-minimap-bar .grip { display:flex; align-items:center; color:var(--c-icon); opacity:.6; }
+  .dshc-minimap-bar .lbl { flex:1; font-weight:500; font-size:11px; }
+  .dshc-minimap-bar .close { width:18px; height:18px; padding:0; border:none; border-radius:4px; background:transparent; color:var(--c-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .dshc-minimap-bar .close:hover { background:var(--c-hover); color:var(--c-text); }
+  .dshc-root .react-flow__minimap.dshc-minimap { position:relative !important; bottom:auto !important; left:auto !important; margin:0 !important; border:none !important; border-radius:0 !important; box-shadow:none !important; background:transparent !important; }
   .dshc-toast { max-width:min(520px, 80vw); padding:8px 14px; font-size:12px; line-height:1.5; }
   .dshc-pop { position:absolute; bottom:calc(100% + 8px); padding:10px 12px; min-width:220px; font-size:12px; }
   .dshc-pop h4 { margin:0 0 8px; font-size:12px; font-weight:600; color:var(--c-muted); }
@@ -331,14 +341,12 @@ export const css = `
 
   /* ── Narrow (the usual right-sidebar width): vertical controls, icon-only bars, panel within the board ── */
   @container dshc (max-width: 760px) {
-    .dshc-controls { flex-direction:column; }
-    .dshc-controls .dshc-sep { width:16px; height:0; margin:4px 0; border-left:none; border-top:.5px solid var(--c-ctl-border); }
     .dshc-zoom { min-width:32px; padding:0; font-size:11px; }
-    .dshc-root .react-flow__minimap.dshc-minimap { margin-bottom:12px; margin-left:62px; }
     .dshc-nodebar .dshc-tbtn, .dshc-actions .dshc-tbtn { width:32px; padding:0; justify-content:center; position:relative; }
     .dshc-nodebar .lbl, .dshc-actions .lbl, .dshc-hint { display:none; }
     .dshc-actions .count { position:absolute; top:2px; right:0; }
     .dshc-dock .add .lbl { display:none; } .dshc-dock .add { width:32px; padding:0; }
+    .dshc-minimap-wrap { bottom:58px; left:8px; }
     .dshc-drawer { bottom:62px; }
   }
 `;
