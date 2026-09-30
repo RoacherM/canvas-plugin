@@ -166,7 +166,11 @@ function Detail({ t, canvasPath, id, reload, actions, onBack }) {
   const { asset } = data;
   const rename = act(() => (name.trim() && name !== asset.name ? api.libraryUpdate(canvasPath, asset.id, 'rename', { name }) : undefined));
   const link = asset.kind === 'link' ? asset.versions.at(-1) : undefined;
-  const setCategory = act((category) => api.libraryUpdate(canvasPath, asset.id, 'category', { category }));
+  const setCategory = act(async (category) => {
+    await api.libraryUpdate(canvasPath, asset.id, 'category', { category });
+    // Nodes on the canvas showing this asset follow the new filing.
+    actions.recategorise?.(asset.id, category);
+  });
   return (
     <div className="dshc-lib-detail nowheel">
       <div className="dshc-lib-head">

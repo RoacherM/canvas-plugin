@@ -409,6 +409,9 @@ test('asset categories: the image bar saves to the library under a category, the
   assert.equal(assign.value, 'character');
   await act(async () => { Object.getOwnPropertyDescriptor(w.HTMLSelectElement.prototype, 'value').set.call(assign, 'scene'); assign.dispatchEvent(new w.Event('change', { bubbles: true })); });
   await waitFor(() => drawer.querySelector('.dshc-lib-sub select')?.value === 'scene');
+  // The node on the canvas showing this asset follows the re-filing.
+  doc = await waitDoc(canvasPath, (d) => d.nodes[0].data.category === 'scene');
+  await waitFor(() => /场景/.test(document.querySelector(`[data-id="${id}"] .dshc-node-title`).textContent));
   await click(drawer.querySelector('[aria-label="返回"]'));
   await waitFor(() => drawer.querySelector('.dshc-lib-cats'));
   await click(chip('场景'));

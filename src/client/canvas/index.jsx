@@ -3,7 +3,7 @@ import {
   Background, BackgroundVariant, MiniMap, Panel, ReactFlow, ReactFlowProvider, applyNodeChanges, useReactFlow, useStore,
 } from '@xyflow/react';
 import flowCss from '@xyflow/react/dist/style.css';
-import { addEdge, addNodes, canGenerate, fitSize, genOf, modeOf, newId, removeEdges, removeNodes, selectVersion, updateNode } from '../../shared/doc.js';
+import { addEdge, addNodes, canGenerate, categoryOf, fitSize, genOf, modeOf, newId, removeEdges, removeNodes, selectVersion, setAssetCategory, updateNode } from '../../shared/doc.js';
 import { PKG, api, canvasName } from '../shared.js';
 import { Icon, KIND_ICON } from './icons.jsx';
 import { ASSET_MIME, LibraryDrawer } from './library.jsx';
@@ -255,7 +255,7 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
       const video = asset.kind === 'video';
       const box = video ? { w: 400, h: 225 } : fitSize(version.naturalWidth, version.naturalHeight, 300);
       node = { id: newId(video ? 'v' : 'i'), type: asset.kind, ...box, data: {
-        path: version.path, label: asset.name, asset: asset.id, naturalWidth: version.naturalWidth, naturalHeight: version.naturalHeight,
+        path: version.path, label: asset.name, asset: asset.id, ...(categoryOf(asset.category) ? { category: asset.category } : {}), naturalWidth: version.naturalWidth, naturalHeight: version.naturalHeight,
         ...(video ? { duration: version.duration, lastFrame: version.lastFrame, ratio: version.ratio, resolution: version.resolution } : {}),
         meta: { source: version.source ? 'generated' : 'imported', prompt: version.source?.text, promptRef: version.source?.prompt, model: version.source?.model },
       } };
@@ -324,7 +324,7 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
           kind: node.type, asset: node.data.asset, mediaPath: node.data.path, name: node.data.label || undefined, category,
           naturalWidth: node.data.naturalWidth, naturalHeight: node.data.naturalHeight, duration: node.data.duration,
         });
-        doc.change((d) => updateNode(d, id, { data: { asset: asset.id, category: category ?? undefined } }));
+        doc.change((d) => setAssetCategory(updateNode(d, id, { data: { asset: asset.id, category: category ?? undefined } }), asset.id, category));
         setToast(t('cat.saved', { cat: t(category ? 'cat.' + category : 'cat.none') }));
       } catch (error) { setToast(error.message); }
     },
@@ -629,7 +629,8 @@ function Board({ path, cwd, t, visible, fullscreen, toggleFullscreen, openFile, 
         ) : null}
         {library ? (
           <LibraryDrawer t={t} canvasPath={path} refresh={doc.doc?.updatedAt} focus={library.focus} onClose={() => setLibrary(null)}
-            actions={{ place: (id, v) => placeAsset(id, v), apply: applyPrompt, canApply: canGenerate(applyTarget()), addLink: (url) => addLink(url), toast: setToast, finalLabel: FINAL }} />
+            actions={{ place: (id, v) => placeAsset(id, v), apply: applyPrompt, canApply: canGenerate(applyTarget()), addLink: (url) => addLink(url), toast: setToast,
+              recategorise: (assetId, category) => doc.change((d) => setAssetCategory(d, assetId, category)), finalLabel: FINAL }} />
         ) : null}
         {settings ? <Settings t={t} onClose={() => setSettings(false)} onSaved={setConfig} /> : null}
       </div>

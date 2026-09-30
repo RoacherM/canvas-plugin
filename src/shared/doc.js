@@ -163,6 +163,27 @@ export function updateNode(doc, id, patch, now = Date.now()) {
   }, now);
 }
 
+/**
+ * Mirror a library asset's category onto every media node bound to it (`data.asset`), so re-filing an
+ * asset in the library drawer (or saving it from one node) keeps all of its nodes' labels in step.
+ * `category` null/unknown clears it. Returns `doc` itself when no node needs to change.
+ */
+export function setAssetCategory(doc, assetId, category, now = Date.now()) {
+  const next = categoryOf(category);
+  const stale = doc.nodes.filter((node) => (node.type === 'image' || node.type === 'video') && node.data.asset === assetId
+    && categoryOf(node.data.category) !== next).map((node) => node.id);
+  if (!assetId || stale.length === 0) return doc;
+  const ids = new Set(stale);
+  return normalizeDoc({
+    ...doc, updatedAt: now,
+    nodes: doc.nodes.map((node) => {
+      if (!ids.has(node.id)) return node;
+      const { category: _old, ...data } = node.data;
+      return { ...node, data: next ? { ...data, category: next } : data, updatedAt: now };
+    }),
+  }, now);
+}
+
 /** Delete nodes, their children, and every edge touching them, leaving tombstones. */
 export function removeNodes(doc, ids, now = Date.now()) {
   const doomed = new Set(ids);

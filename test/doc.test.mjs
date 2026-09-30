@@ -156,3 +156,26 @@ test('asset categories: known ones survive normalize and summary; unknown ones d
   assert.deepEqual(items.filter((i) => D.matchesCategory(i, 'prop')), [{ category: 'prop' }]);
   assert.deepEqual(items.filter((i) => D.matchesCategory(i, 'none')), [{}, { category: 'bogus' }]);
 });
+
+test('re-filing an asset moves every node bound to it into the new category, and only those', () => {
+  const t0 = Date.now();
+  const doc = D.normalizeDoc({ nodes: [
+    img('a', 0, 0, { data: { path: 'assets/a.png', asset: 'i_one', category: 'character' } }),
+    img('b', 0, 0, { data: { path: 'assets/b.png', asset: 'i_one' } }),
+    { id: 'v', type: 'video', x: 0, y: 0, w: 400, h: 225, data: { path: 'assets/v.mp4', asset: 'i_one', category: 'prop' } },
+    img('other', 0, 0, { data: { path: 'assets/o.png', asset: 'i_two', category: 'prop' } }),
+    { id: 't', type: 'text', x: 0, y: 0, w: 100, h: 50, data: { text: 'x', asset: 'i_one' } },
+  ] }, t0);
+  const next = D.setAssetCategory(doc, 'i_one', 'scene', t0 + 10);
+  const cat = (d, id) => d.nodes.find((n) => n.id === id).data.category;
+  assert.deepEqual(['a', 'b', 'v', 'other', 't'].map((id) => cat(next, id)), ['scene', 'scene', 'scene', 'prop', undefined]);
+  assert.equal(next.nodes.find((n) => n.id === 'other').updatedAt, doc.nodes.find((n) => n.id === 'other').updatedAt, 'unrelated nodes are untouched');
+  // Nothing to change: the very same document comes back (no save is scheduled).
+  assert.equal(D.setAssetCategory(next, 'i_one', 'scene'), next);
+  assert.equal(D.setAssetCategory(next, 'i_missing', 'scene'), next);
+  // Clearing (null or an unknown value) removes the key; the edit wins a merge against the older copy.
+  const cleared = D.setAssetCategory(next, 'i_one', null, t0 + 20);
+  assert.equal('category' in cleared.nodes.find((n) => n.id === 'a').data, false);
+  assert.equal(cat(D.setAssetCategory(next, 'i_one', 'monster', t0 + 20), 'a'), undefined);
+  assert.equal(cat(D.mergeDocs(next, cleared), 'b'), undefined);
+});
