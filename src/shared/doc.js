@@ -23,6 +23,18 @@ export function matchesCategory(item, filter = 'all') {
   const category = categoryOf(item?.category);
   return filter === 'none' ? category === undefined : category === filter;
 }
+/**
+ * How many items each category filter would show: `{ all, character, …, audio, none }`. Unknown or
+ * missing categories count as `none`, matching `matchesCategory`.
+ */
+export function categoryCounts(items = []) {
+  const counts = Object.fromEntries(['all', ...ASSET_CATEGORIES, 'none'].map((key) => [key, 0]));
+  for (const item of items) {
+    counts.all += 1;
+    counts[categoryOf(item?.category) ?? 'none'] += 1;
+  }
+  return counts;
+}
 const TOMBSTONE_TTL = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_SIZE = {
   image: { w: 320, h: 320 }, video: { w: 400, h: 225 }, text: { w: 240, h: 120 },

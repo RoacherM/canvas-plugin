@@ -155,6 +155,12 @@ test('asset categories: known ones survive normalize and summary; unknown ones d
   assert.equal(items.filter((i) => D.matchesCategory(i, 'all')).length, 4);
   assert.deepEqual(items.filter((i) => D.matchesCategory(i, 'prop')), [{ category: 'prop' }]);
   assert.deepEqual(items.filter((i) => D.matchesCategory(i, 'none')), [{}, { category: 'bogus' }]);
+  // Counts per filter chip agree with the filter itself.
+  const counts = D.categoryCounts(items);
+  assert.deepEqual(counts, { all: 4, character: 0, scene: 0, prop: 1, style: 0, audio: 1, none: 2 });
+  for (const key of Object.keys(counts)) assert.equal(counts[key], items.filter((i) => D.matchesCategory(i, key)).length, key);
+  assert.deepEqual(D.categoryCounts(), { all: 0, character: 0, scene: 0, prop: 0, style: 0, audio: 0, none: 0 });
+  assert.equal(D.categoryCounts([null, 'x']).none, 2, 'junk entries count as uncategorised');
 });
 
 test('re-filing an asset moves every node bound to it into the new category, and only those', () => {

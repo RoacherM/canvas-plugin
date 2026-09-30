@@ -1,5 +1,5 @@
 import React from 'react';
-import { ASSET_CATEGORIES, categoryOf, matchesCategory } from '../../shared/doc.js';
+import { ASSET_CATEGORIES, categoryCounts, categoryOf, matchesCategory } from '../../shared/doc.js';
 import { api, assetAbsolute } from '../shared.js';
 import { Icon } from './icons.jsx';
 
@@ -258,9 +258,12 @@ export function LibraryDrawer({ t, canvasPath, refresh, focus, onClose, actions 
   const changed = () => { api.library(canvasPath).then((result) => setItems(result?.assets ?? []), () => {}); actions.changed?.(); };
   const all = { ...actions, open: setOpen, changed };
   const q = query.trim().toLowerCase();
-  const shown = (items ?? []).filter((item) => !item.archived && (tab === 'all' || item.kind === tab) && matchesCategory(item, category)
+  // Everything the kind tab and search let through; the category chips count within it, then filter it.
+  const candidates = (items ?? []).filter((item) => !item.archived && (tab === 'all' || item.kind === tab)
     && (!q || [item.name, item.latest.text, item.latest.title, item.latest.url, item.latest.prompt, ...Object.keys(item.labels ?? {}), categoryOf(item.category) ? t('cat.' + item.category) : '']
       .some((s) => s && String(s).toLowerCase().includes(q))));
+  const counts = categoryCounts(candidates);
+  const shown = candidates.filter((item) => matchesCategory(item, category));
   const addLink = async () => { if (!url.trim()) return; const ok = await actions.addLink(url.trim()); if (ok) { setUrl(''); changed(); } };
   return (
     <aside className="dshc-drawer dshc-float nodrag nowheel" aria-label={t('lib.title')} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); if (open) setOpen(null); else onClose(); } }}>
@@ -279,7 +282,10 @@ export function LibraryDrawer({ t, canvasPath, refresh, focus, onClose, actions 
             <>
               <div className="dshc-lib-cats" role="group" aria-label={t('cat.filter')}>
                 {CATEGORY_FILTERS.map((key) => (
-                  <button key={key} type="button" aria-pressed={category === key} className={category === key ? 'on' : ''} onClick={() => setCategory(key)}>{t('cat.' + key)}</button>
+                  <button key={key} type="button" data-cat={key} aria-pressed={category === key}
+                    className={(category === key ? 'on' : '') + (items && counts[key] === 0 ? ' empty' : '')} onClick={() => setCategory(key)}>
+                    {t('cat.' + key)}{items ? <span className="n">{counts[key]}</span> : null}
+                  </button>
                 ))}
               </div>
               <div className="dshc-lib-search">

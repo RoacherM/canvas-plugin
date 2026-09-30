@@ -392,7 +392,13 @@ test('asset categories: the image bar saves to the library under a category, the
   // The drawer: the category chips filter the list; the card shows its category.
   await click(document.querySelector('[aria-label="素材库"]'));
   const drawer = await waitFor(() => document.querySelector('.dshc-drawer .dshc-lib-cats') && document.querySelector('.dshc-drawer'));
-  const chip = (label) => [...drawer.querySelectorAll('.dshc-lib-cats button')].find((b) => b.textContent === label);
+  const chip = (label) => [...drawer.querySelectorAll('.dshc-lib-cats button')].find((b) => b.firstChild?.textContent === label);
+  // Each chip counts what its filter would show; together the categories and 未分类 add up to 全部分类.
+  const count = (label) => Number(chip(label).querySelector('.n')?.textContent);
+  await waitFor(() => count('角色') === 1);
+  assert.equal(['角色', '场景', '道具', '风格', '音频', '未分类'].reduce((sum, label) => sum + count(label), 0), count('全部分类'));
+  assert.equal(count('场景'), 0);
+  assert.ok(chip('场景').classList.contains('empty'));
   await click(chip('角色'));
   await waitFor(() => drawer.querySelectorAll('.dshc-lib-card').length === 1);
   const card = drawer.querySelector('.dshc-lib-card');
@@ -414,6 +420,7 @@ test('asset categories: the image bar saves to the library under a category, the
   await waitFor(() => /场景/.test(document.querySelector(`[data-id="${id}"] .dshc-node-title`).textContent));
   await click(drawer.querySelector('[aria-label="返回"]'));
   await waitFor(() => drawer.querySelector('.dshc-lib-cats'));
+  await waitFor(() => count('场景') === 1 && count('角色') === 0);
   await click(chip('场景'));
   await waitFor(() => drawer.querySelectorAll('.dshc-lib-card.kind-image').length === 1);
   await click(drawer.querySelector('[aria-label="关闭素材库"]'));

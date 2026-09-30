@@ -262,6 +262,8 @@ export const css = `
   .dshc-lib-cats { display:flex; flex-wrap:wrap; gap:4px; padding:0 12px 8px; }
   .dshc-lib-cats button { height:22px; padding:0 8px; border:1px solid var(--c-ctl-border); border-radius:11px; background:transparent; color:var(--c-muted); font-size:11px; cursor:pointer; }
   .dshc-lib-cats button:hover { color:var(--c-text); }
+  .dshc-lib-cats button .n { margin-left:4px; opacity:.7; font-variant-numeric:tabular-nums; }
+  .dshc-lib-cats button.empty:not(.on) { opacity:.5; }
   .dshc-lib-cats button.on { border-color:transparent; background:var(--c-brand-surface); color:var(--c-brand-text); }
   .dshc-lib-cat select { height:20px; padding:0 4px; border:1px solid var(--c-ctl-border); border-radius:6px; background:var(--c-input); color:var(--c-text); font:inherit; font-size:11px; outline:none; cursor:pointer; }
   .dshc-tag.cat { background:#000000a0; color:#fff; }
